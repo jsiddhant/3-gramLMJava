@@ -8,6 +8,7 @@ import edu.berkeley.nlp.langmodel.EnglishWordIndexer;
 import edu.berkeley.nlp.langmodel.LanguageModelFactory;
 import edu.berkeley.nlp.langmodel.NgramLanguageModel;
 import edu.berkeley.nlp.util.CollectionUtils;
+import edu.berkeley.nlp.util.StringIndexer;
 
 public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 {
@@ -92,6 +93,7 @@ public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 			}
 		}
 		buildFertsAndAlphas();
+//		calculatePerplexity(sentenceCollection);
 //		checks();
 		System.out.println("Done building LmFactory");
 		int unigramsTotal = unigrams.getTotal();
@@ -112,35 +114,7 @@ public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 		System.out.println("Total Trigrams seen: " + Integer.toString(trigramsTotal));
 		System.out.println("Total Unique Trigrams: " + Integer.toString(trigramsKeyCount));
 	}
-//	private void checks(){
-////		int count_bigrams = bigrams.size();
-////		int fert_sum = 0;
-////		long[] uni_keys = unigrams.getKeyList();
-////		for(long key:uni_keys){
-////			fert_sum += Math.max(unigrams.getFerts(key),0);
-////		}
-////
-////		int count_trigrams = trigrams.size();
-////		fert_sum = 0;
-////
-////		for(long key:bigrams.getKeyList()){
-////			fert_sum += Math.max(bigrams.getFerts(key), 0);
-////		}
-////		int a = 1;
-//		HashSet<Integer> temp = new HashSet<>();
-//		int sum =0;
-//		for(long k:bigrams.getKeyList()){
-//			int[] words = decodeKey(k);
-//			if(words[0]==3){
-//				sum += bigrams.get(k);
-//				temp.add(words[1]);
-//			}
-//		}
-//
-//		int the_uni_sum = unigrams.get(encodeKey(3));
-//		int t = temp.size();
-//		int a=1;
-//	}
+
 	private void processUnigrams(String w1){
 		long k1 = encodeKey(EnglishWordIndexer.getIndexer().addAndGetIndex(w1));
 		unigrams.incrementAt(k1);
@@ -161,6 +135,52 @@ public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 		trigrams.incrementAt(k3);
 	}
 
+	private void calculatePerplexity(Iterable<List<String>> sentenceCollection){
+		int wordCount = 0;
+		double sumLogProb = 0;
+		int sent = 0;
+		for (List<String> sentence : sentenceCollection) {
+			sent++;
+			if (sent % 1000000 == 0) System.out.println("On sentence " + sent);
+			List<String> stoppedSentence = new ArrayList<String>(sentence);
+			wordCount += stoppedSentence.size()+1;
+			stoppedSentence.add(0, START);
+			stoppedSentence.add(0, START);
+			stoppedSentence.add(STOP);
+
+			sumLogProb += calculateSentenceLogProbs(stoppedSentence);
+		}
+
+		double perplexity = Math.pow(2, -1*sumLogProb/wordCount);
+
+		System.out.println("--------------------------------------------------");
+		System.out.println("-----  SumLog Prob = " + Double.toString(sumLogProb) + " -----");
+		System.out.println("-------------------------------------------------");
+
+		System.out.println("--------------------------------------------------");
+		System.out.println("-----  Word Count = " + Integer.toString(wordCount) + " -----");
+		System.out.println("--------------------------------------------------");
+
+		System.out.println("--------------------------------------------------");
+		System.out.println("-----  Perplexity = " + Double.toString(perplexity) + " -----");
+		System.out.println("--------------------------------------------------");
+	}
+
+	private double calculateSentenceLogProbs(List<String> stoppedSentence){
+		double sentLogProb = 0;
+		StringIndexer st = EnglishWordIndexer.getIndexer();
+
+		for(int i=2; i<stoppedSentence.size(); i++){
+				int[] ngram = new int[]{st.addAndGetIndex(stoppedSentence.get(i-2)),
+											st.addAndGetIndex(stoppedSentence.get(i-1)),
+												st.addAndGetIndex(stoppedSentence.get(i))};
+
+				sentLogProb += getNgramLogProbability(ngram, 0, 3) / Math.log(2);
+		}
+
+		return sentLogProb;
+	}
+
 	private void buildFertsAndAlphas(){
 		long[] trigramKeys = trigrams.getKeyList();
 
@@ -172,6 +192,10 @@ public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 				}
 				if(!bigrams.incrementAlpha(encodeKey(words[0], words[1]))){
 					throw new Error("Failed to increment alpha of Bigrams");
+				}
+				/** Trial Stuff Here **/
+				if(!unigrams.incrementAtemp(encodeKey(words[1]))){
+					throw new Error("Atemp Increment Failed");
 				}
 			}
 		}
@@ -197,29 +221,28 @@ public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 	}
 
 	public double getNgramLogProbability(int[] ngram, int from, int to){
-		double d = 0.7;
+		double d = 1;
 		if (to - from == 3) {
 			// Unigram Fertility / Total Fertility (same as num Bigrams).
 			double p1 = (double) Math.max(unigrams.getFerts(encodeKey(ngram[from+2])), 0) / bigrams.size();
 
 			double alpha_p1_multiplier = Math.max(unigrams.getAlphas(encodeKey(ngram[from+1])), 0);
-			alpha_p1_multiplier /= Math.max(unigrams.getFerts(encodeKey(ngram[from+1])),1);
+			alpha_p1_multiplier /= Math.max(unigrams.getAtemp(encodeKey(ngram[from+1])),1);
 
-			double alpha_p1 = unigrams.keyExists(encodeKey(ngram[from+1])) ?  d * alpha_p1_multiplier : 1;
-
+			double alpha_p1 = unigrams.getAtemp(encodeKey(ngram[from+1])) > 0 ?  d * alpha_p1_multiplier : 1;
 			double p2 = Math.max(bigrams.getFerts(encodeKey(ngram[from+1], ngram[from+2]))-d, 0)
-									/ Math.max(unigrams.getFerts(encodeKey(ngram[from+1])),1) + alpha_p1 * p1;
-			double alpha_p2_multiplier = Math.max(bigrams.getAlphas(encodeKey(ngram[from+0], ngram[from+1])), 0);
-			alpha_p2_multiplier /= Math.max(bigrams.get(encodeKey(ngram[from+0], ngram[from+1])), 1);
+									/ Math.max(unigrams.getAtemp(encodeKey(ngram[from+1])),1) + alpha_p1 * p1;
+			double alpha_p2_multiplier = Math.max(bigrams.getAlphas(encodeKey(ngram[from], ngram[from+1])), 0);
+			alpha_p2_multiplier /= Math.max(bigrams.get(encodeKey(ngram[from], ngram[from+1])), 1);
 
-			double alpha_p2 = bigrams.keyExists(encodeKey(ngram[from+0], ngram[from+1])) ? d * alpha_p2_multiplier : 1;
+			double alpha_p2 = bigrams.keyExists(encodeKey(ngram[from], ngram[from+1])) ? d * alpha_p2_multiplier : 1;
 
-			double p3 = Math.max(trigrams.get(encodeKey(ngram[from+0], ngram[from+1], ngram[from+2]))-d, 0)
-									/ Math.max(bigrams.get(encodeKey(ngram[from+0], ngram[from+1])), 1);
+			double p3 = Math.max(trigrams.get(encodeKey(ngram[from], ngram[from+1], ngram[from+2]))-d, 0)
+									/ Math.max(bigrams.get(encodeKey(ngram[from], ngram[from+1])), 1);
 			double f_value = p3 + alpha_p2 * p2;
 
 			if(f_value == 0){
-				return -1000;
+				return -10000;
 			}
 			f_value =  Math.log(f_value);
 			return f_value;
@@ -227,30 +250,30 @@ public class LmFactory implements LanguageModelFactory, NgramLanguageModel
 		else if(to - from == 2){
 			double p1 = (double) Math.max(unigrams.getFerts(encodeKey(ngram[from+1])), 0) / bigrams.size();
 
-			double alpha_p1_multiplier = Math.max(unigrams.getAlphas(encodeKey(ngram[from+0])), 0);
-			alpha_p1_multiplier /= Math.max(unigrams.get(encodeKey(ngram[from+0])), 1);
+			double alpha_p1_multiplier = Math.max(unigrams.getAlphas(encodeKey(ngram[from])), 0);
+			alpha_p1_multiplier /= Math.max(unigrams.get(encodeKey(ngram[from])), 1);
 
-			double alpha_p1 = unigrams.keyExists(encodeKey(ngram[from+0])) ? d * alpha_p1_multiplier : 1;
+			double alpha_p1 = unigrams.keyExists(encodeKey(ngram[from])) ? d * alpha_p1_multiplier : 1;
 
-			double p2 = Math.max(bigrams.get(encodeKey(ngram[from+0], ngram[from+1]))-d, 0)
-					/ Math.max(unigrams.get(encodeKey(ngram[from+0])), 1);
+			double p2 = Math.max(bigrams.get(encodeKey(ngram[from], ngram[from+1]))-d, 0)
+					/ Math.max(unigrams.get(encodeKey(ngram[from])), 1);
 
 			double f_value = p2 + alpha_p1 * p1;
 			if(f_value == 0){
-				return -1000;
+				return -10000;
 			}
 			return Math.log(f_value);
 		}
 		else if(to - from == 1){
-			double f_value = Math.max(unigrams.get(ngram[from+0]), 0) / unigrams.getTotal();
+			double f_value = Math.max(unigrams.get(ngram[from]), 0) / unigrams.getTotal();
 
 			if(f_value == 0){
-				return -1000;
+				return -100000;
 			}
 			return Math.log(f_value);
 		}
 		else{
-			return -1000;
+			return -100000;
 		}
 	}
 

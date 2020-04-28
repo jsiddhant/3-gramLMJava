@@ -61,7 +61,11 @@ public class LongKeyHashWrapper {
 
     public int getAlphas(long k){ return lmMap.getAlphas(k);}
 
+    public int getAtemp(long k){ return lmMap.getAtemp(k);}
+
     public boolean incrementAlpha(long k){ return lmMap.incrementAlphasAt(k);}
+
+    public boolean incrementAtemp(long k){ return lmMap.incrementAtempAt(k);}
 
 //    public boolean getTotalFerts(){
 //        if(totalFerts == 0){

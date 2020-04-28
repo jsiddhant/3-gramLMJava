@@ -19,6 +19,8 @@ public class LongKeyOpenHashMap{
 
     private int[] alphas;
 
+    private int[] atemp;
+
     private int size = 0;
 
     private final float incrAmount = 2;
@@ -118,6 +120,11 @@ public class LongKeyOpenHashMap{
         return alphas[pos];
     }
 
+    public int getAtemp(long k){
+        int pos = find(k);
+        return atemp[pos];
+    }
+
     private int find(long k) {
         int pos = getInitialPos(k, keys);
         long curr = keys[pos];
@@ -167,6 +174,23 @@ public class LongKeyOpenHashMap{
         else{
             int a = alphas[pos];
             alphas[pos] = a == -1 ? 1 : a +1;
+            return true;
+        }
+
+    }
+
+    public boolean incrementAtempAt(long k){
+        if(atemp == null){
+            atemp = new int[keys.length];
+        }
+
+        int pos = find(k);
+        if(values[pos] == -1){
+            throw new Error("Key not found when adding fertility");
+        }
+        else{
+            int a = atemp[pos];
+            atemp[pos] = a == -1 ? 1 : a +1;
             return true;
         }
 
